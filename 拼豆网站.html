@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>AI 拼豆画板</title>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f3f4f6;
+      text-align: center;
+      padding: 30px;
+    }
+
+    .toolbar {
+      margin: 20px auto;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .board-wrap {
+      width: 100%;
+      overflow: auto;
+    }
+
+    .board {
+      display: grid;
+      justify-content: center;
+      gap: 1px;
+      margin: 20px auto;
+    }
+
+    .cell {
+      background: white;
+      border-radius: 50%;
+      border: 1px solid #d1d5db;
+      cursor: pointer;
+      transition: 0.1s;
+      box-sizing: border-box;
+    }
+
+    .cell:hover {
+      transform: scale(1.2);
+      border-color: #2563eb;
+    }
+
+    button, select {
+      padding: 10px 14px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    button {
+      background: #2563eb;
+      color: white;
+    }
+
+    button:hover {
+      background: #1d4ed8;
+    }
+
+    select {
+      background: white;
+      border: 1px solid #d1d5db;
+    }
+
+    input[type="color"] {
+      width: 50px;
+      height: 40px;
+      border: none;
+      cursor: pointer;
+    }
+
+    .tip {
+      color: #555;
+      font-size: 14px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>AI 拼豆画板</h1>
+  <p>上传图片后，会自动匹配 MARD / COCO 拼豆色号</p>
+  <p class="tip">支持 30×30 和 64×64 豆豆板，导出图纸可用于打印参考</p>
+
+  <div class="toolbar">
+    <select id="gridSizeSelect" onchange="changeGridSize()">
+      <option value="30">30 × 30</option>
+      <option value="64">64 × 64</option>
+    </select>
+
+    <input type="color" id="colorPicker" value="#ff0000">
+    <input type="file" id="imageUpload" accept="image/*">
+
+    <button onclick="clearBoard()">清空画板</button>
+    <button onclick="exportPattern()">导出打印图纸</button>
+  </div>
+
+  <div class="board-wrap">
+    <div class="board" id="board"></div>
+  </div>
+
+  <script>
+    const board = document.getElementById("board");
+    const colorPicker = document.getElementById("colorPicker");
+    const imageUpload = document.getElementById("imageUpload");
+    const gridSizeSelect = document.getElementById("gridSizeSelect");
+
+    let gridSize = 30;
+    let totalCells = gridSize * gridSize;
+
+    const beadPalette = [
+      { mard: "A1", coco: "E02", name: "浅黄", rgb: [245, 241, 170] },
+      { mard: "A2", coco: "E01", name: "奶黄", rgb: [248, 244, 130] },
+      { mard: "A3", coco: "E05", name: "亮黄", rgb: [255, 236, 60] },
+      { mard: "A4", coco: "E07", name: "柠檬黄", rgb: [255, 230, 20] },
+      { mard: "A5", coco: "D03", name: "金黄", rgb: [255, 207, 30] },
+      { mard: "A6", coco: "D05", name: "橙黄", rgb: [255, 160, 40] },
+      { mard: "A7", coco: "D08", name: "橘色", rgb: [255, 120, 50] },
+      { mard: "A8", coco: "E08", name: "浅橙", rgb: [255, 180, 80] },
+      { mard: "A9", coco: "D06", name: "橙色", rgb: [255, 140, 35] },
+      { mard: "A10", coco: "D07", name: "深橙", rgb: [245, 100, 35] },
+      { mard: "A11", coco: "D01", name: "米黄", rgb: [245, 220, 135] },
+      { mard: "A12", coco: "K09", name: "浅肤黄", rgb: [235, 190, 120] },
+      { mard: "A13", coco: "D04", name: "橙粉", rgb: [255, 130, 95] },
+      { mard: "A14", coco: "C05", name: "珊瑚橙", rgb: [245, 75, 75] },
+      { mard: "A15", coco: "E04", name: "浅柠黄", rgb: [245, 245, 105] },
+      { mard: "A16", coco: "E03", name: "淡黄", rgb: [245, 235, 90] },
+      { mard: "A17", coco: "F06", name: "黄绿", rgb: [210, 235, 80] },
+      { mard: "A18", coco: "D02", name: "浅橘黄", rgb: [240, 180, 90] },
+      { mard: "A19", coco: "K10", name: "橙粉肤", rgb: [245, 140, 120] },
+
+      { mard: "B1", coco: "F05", name: "浅绿", rgb: [150, 235, 90] },
+      { mard: "B2", coco: "F08", name: "亮绿", rgb: [80, 230, 80] },
+      { mard: "B3", coco: "F04", name: "草绿", rgb: [90, 210, 80] },
+      { mard: "B4", coco: "F09", name: "绿色", rgb: [50, 190, 80] },
+      { mard: "B5", coco: "F10", name: "翠绿", rgb: [35, 180, 90] },
+      { mard: "B6", coco: "G04", name: "青绿", rgb: [70, 200, 140] },
+      { mard: "B7", coco: "G05", name: "蓝绿", rgb: [60, 170, 150] },
+      { mard: "B8", coco: "F11", name: "深绿", rgb: [25, 130, 70] },
+      { mard: "B9", coco: "F16", name: "墨绿", rgb: [45, 100, 70] },
+      { mard: "B10", coco: "G03", name: "浅青绿", rgb: [140, 215, 190] },
+      { mard: "B11", coco: "F14", name: "橄榄绿", rgb: [95, 130, 65] },
+      { mard: "B12", coco: "F12", name: "深草绿", rgb: [60, 150, 75] },
+      { mard: "B13", coco: "F02", name: "浅嫩绿", rgb: [180, 235, 110] },
+      { mard: "B14", coco: "F06", name: "荧光绿", rgb: [190, 245, 75] },
+      { mard: "B15", coco: "F15", name: "灰绿", rgb: [95, 135, 95] },
+      { mard: "B16", coco: "F03", name: "淡绿", rgb: [165, 230, 130] },
+      { mard: "B17", coco: "F13", name: "苔绿", rgb: [120, 155, 70] },
+      { mard: "B18", coco: "F07", name: "黄绿", rgb: [170, 230, 65] },
+      { mard: "B19", coco: "G06", name: "孔雀绿", rgb: [45, 185, 170] },
+      { mard: "B20", coco: "G02", name: "薄荷绿", rgb: [160, 230, 210] },
+      { mard: "B21", coco: "G07", name: "深青绿", rgb: [30, 120, 115] },
+      { mard: "B22", coco: "G08", name: "墨青", rgb: [30, 80, 80] },
+
+      { mard: "C1", coco: "G01", name: "浅蓝", rgb: [175, 235, 245] },
+      { mard: "C2", coco: "H03", name: "天蓝", rgb: [120, 220, 235] },
+      { mard: "C3", coco: "H04", name: "湖蓝", rgb: [70, 195, 230] },
+      { mard: "C4", coco: "H05", name: "亮蓝", rgb: [30, 170, 220] },
+      { mard: "C5", coco: "H07", name: "蓝色", rgb: [20, 145, 210] },
+      { mard: "C6", coco: "H08", name: "中蓝", rgb: [40, 125, 205] },
+      { mard: "C7", coco: "H13", name: "宝蓝", rgb: [50, 100, 200] },
+      { mard: "C8", coco: "H14", name: "深蓝", rgb: [35, 75, 170] },
+      { mard: "C9", coco: "H16", name: "藏蓝", rgb: [35, 65, 150] },
+      { mard: "C10", coco: "H09", name: "青蓝", rgb: [45, 190, 205] },
+      { mard: "C11", coco: "H10", name: "浅青蓝", rgb: [40, 175, 190] },
+      { mard: "C12", coco: "H23", name: "灰蓝", rgb: [100, 150, 170] },
+      { mard: "C13", coco: "H01", name: "淡蓝", rgb: [205, 235, 245] },
+      { mard: "C14", coco: "H02", name: "冰蓝", rgb: [190, 230, 240] },
+      { mard: "C15", coco: "H11", name: "绿蓝", rgb: [50, 165, 180] },
+      { mard: "C16", coco: "H18", name: "深湖蓝", rgb: [20, 95, 160] },
+      { mard: "C17", coco: "H19", name: "蓝青", rgb: [35, 145, 190] },
+      { mard: "C18", coco: "H24", name: "深灰蓝", rgb: [70, 105, 130] },
+      { mard: "C19", coco: "H12", name: "浅孔雀蓝", rgb: [75, 190, 210] },
+      { mard: "C20", coco: "H17", name: "普蓝", rgb: [40, 85, 180] },
+
+      { mard: "D1", coco: "J07", name: "浅紫", rgb: [175, 170, 235] },
+      { mard: "D2", coco: "J08", name: "蓝紫", rgb: [120, 130, 220] },
+      { mard: "D3", coco: "H15", name: "深蓝紫", rgb: [75, 90, 200] },
+      { mard: "D4", coco: "H20", name: "靛蓝", rgb: [60, 75, 170] },
+      { mard: "D5", coco: "J12", name: "紫红", rgb: [180, 65, 200] },
+      { mard: "D6", coco: "J11", name: "紫色", rgb: [150, 70, 190] },
+      { mard: "D7", coco: "J15", name: "深紫", rgb: [110, 60, 165] },
+      { mard: "D8", coco: "J03", name: "淡紫", rgb: [220, 205, 245] },
+      { mard: "D9", coco: "J04", name: "粉紫", rgb: [205, 185, 235] },
+      { mard: "D10", coco: "J19", name: "黑紫", rgb: [65, 45, 95] },
+      { mard: "D13", coco: "J14", name: "玫紫", rgb: [190, 20, 165] },
+      { mard: "D20", coco: "J17", name: "亮紫", rgb: [165, 25, 185] },
+
+      { mard: "E1", coco: "K03", name: "浅粉", rgb: [255, 200, 220] },
+      { mard: "E2", coco: "K15", name: "淡粉", rgb: [245, 160, 205] },
+      { mard: "E3", coco: "K17", name: "粉色", rgb: [245, 120, 190] },
+      { mard: "E4", coco: "K21", name: "玫粉", rgb: [235, 80, 165] },
+      { mard: "E5", coco: "K19", name: "亮玫粉", rgb: [230, 45, 145] },
+      { mard: "E6", coco: "K22", name: "深粉", rgb: [210, 35, 120] },
+      { mard: "E7", coco: "K25", name: "莓粉", rgb: [190, 45, 110] },
+      { mard: "E8", coco: "K12", name: "肉粉", rgb: [255, 205, 210] },
+      { mard: "E9", coco: "K18", name: "桃粉", rgb: [245, 120, 170] },
+      { mard: "E10", coco: "K23", name: "紫粉", rgb: [205, 55, 150] },
+      { mard: "E11", coco: "K02", name: "浅肤", rgb: [255, 220, 200] },
+      { mard: "E12", coco: "K16", name: "粉肤", rgb: [245, 175, 190] },
+
+      { mard: "F1", coco: "K08", name: "鲜红", rgb: [255, 70, 70] },
+      { mard: "F2", coco: "C02", name: "红色", rgb: [245, 45, 50] },
+      { mard: "F3", coco: "C03", name: "正红", rgb: [230, 35, 45] },
+      { mard: "F4", coco: "C06", name: "深红", rgb: [210, 20, 40] },
+      { mard: "F5", coco: "C07", name: "暗红", rgb: [180, 20, 35] },
+      { mard: "F6", coco: "Z21", name: "酒红", rgb: [135, 25, 40] },
+      { mard: "F7", coco: "C10", name: "枣红", rgb: [170, 35, 55] },
+      { mard: "F8", coco: "C09", name: "玫红", rgb: [220, 50, 75] },
+      { mard: "F12", coco: "C01", name: "亮红", rgb: [250, 60, 60] },
+      { mard: "F13", coco: "C04", name: "橘红", rgb: [245, 85, 65] },
+      { mard: "F15", coco: "C08", name: "深玫红", rgb: [200, 35, 60] },
+
+      { mard: "G1", coco: "Z02", name: "浅棕", rgb: [230, 180, 140] },
+      { mard: "G2", coco: "Z05", name: "肤棕", rgb: [220, 145, 100] },
+      { mard: "G3", coco: "Z06", name: "橙棕", rgb: [200, 120, 70] },
+      { mard: "G4", coco: "Z08", name: "棕色", rgb: [160, 95, 55] },
+      { mard: "G5", coco: "Z10", name: "金棕", rgb: [210, 145, 45] },
+      { mard: "G6", coco: "Z11", name: "土黄棕", rgb: [190, 125, 45] },
+      { mard: "G7", coco: "Z18", name: "深棕", rgb: [120, 70, 45] },
+      { mard: "G8", coco: "Z22", name: "巧克力", rgb: [90, 50, 40] },
+      { mard: "G9", coco: "Z09", name: "卡其", rgb: [190, 150, 95] },
+      { mard: "G10", coco: "Z15", name: "咖啡", rgb: [170, 105, 45] },
+      { mard: "G19", coco: "Z12", name: "红棕", rgb: [180, 80, 45] },
+      { mard: "G20", coco: "Z19", name: "暗棕", rgb: [110, 55, 35] },
+
+      { mard: "H1", coco: "A05", name: "白色", rgb: [255, 255, 255] },
+      { mard: "H2", coco: "B11", name: "米白", rgb: [235, 235, 225] },
+      { mard: "H3", coco: "B03", name: "浅灰", rgb: [210, 210, 210] },
+      { mard: "H4", coco: "B05", name: "中灰", rgb: [160, 160, 160] },
+      { mard: "H5", coco: "B06", name: "灰色", rgb: [120, 120, 120] },
+      { mard: "H6", coco: "B07", name: "深灰", rgb: [80, 80, 80] },
+      { mard: "H7", coco: "B09", name: "黑色", rgb: [20, 20, 20] },
+      { mard: "H8", coco: "A09", name: "粉灰", rgb: [210, 195, 200] },
+      { mard: "H9", coco: "A08", name: "冷灰", rgb: [185, 190, 190] },
+      { mard: "H10", coco: "A10", name: "暖灰", rgb: [170, 165, 155] },
+
+      { mard: "M1", coco: "Y01", name: "暗绿灰", rgb: [95, 125, 105] },
+      { mard: "M2", coco: "Y02", name: "灰绿", rgb: [120, 145, 125] },
+      { mard: "M3", coco: "Y03", name: "深绿灰", rgb: [70, 90, 75] },
+      { mard: "M4", coco: "Y04", name: "暗米灰", rgb: [165, 160, 135] },
+      { mard: "M8", coco: "Y08", name: "灰粉棕", rgb: [165, 120, 115] },
+      { mard: "M10", coco: "Y10", name: "浅紫灰", rgb: [185, 160, 180] },
+      { mard: "M14", coco: "Y14", name: "红棕灰", rgb: [180, 95, 80] },
+
+      { mard: "P1", coco: "M01", name: "珠光白", rgb: [245, 245, 235] },
+      { mard: "P2", coco: "M02", name: "珠光灰", rgb: [210, 210, 205] },
+      { mard: "P3", coco: "M03", name: "珠光绿", rgb: [160, 215, 150] },
+      { mard: "P4", coco: "M04", name: "珠光粉", rgb: [245, 145, 145] },
+      { mard: "P5", coco: "M05", name: "珠光橙", rgb: [240, 135, 55] },
+      { mard: "P6", coco: "M06", name: "珠光青", rgb: [80, 200, 165] },
+      { mard: "P7", coco: "M07", name: "珠光肉粉", rgb: [245, 160, 130] },
+      { mard: "P8", coco: "M08", name: "珠光黄", rgb: [245, 215, 75] },
+      { mard: "P14", coco: "M14", name: "珠光蓝", rgb: [70, 145, 190] },
+      { mard: "P17", coco: "M17", name: "珠光金", rgb: [230, 165, 55] },
+
+      { mard: "Q1", coco: "W3", name: "温变粉", rgb: [245, 150, 220] },
+      { mard: "Q2", coco: "W4", name: "温变浅黄", rgb: [245, 240, 120] },
+      { mard: "Q3", coco: "W1", name: "温变黄", rgb: [245, 235, 20] },
+      { mard: "Q4", coco: "W2", name: "温变白", rgb: [240, 240, 235] },
+      { mard: "Q5", coco: "W5", name: "温变蓝", rgb: [110, 220, 230] },
+
+      { mard: "R1", coco: "L01", name: "半透红", rgb: [230, 20, 55] },
+      { mard: "R2", coco: "L02", name: "半透玫红", rgb: [235, 35, 140] },
+      { mard: "R3", coco: "L03", name: "半透橙", rgb: [245, 115, 35] },
+      { mard: "R4", coco: "L04", name: "半透黄", rgb: [240, 235, 50] },
+      { mard: "R5", coco: "L05", name: "半透绿", rgb: [55, 200, 100] },
+      { mard: "R6", coco: "L06", name: "半透青", rgb: [60, 190, 180] },
+      { mard: "R7", coco: "L07", name: "半透蓝", rgb: [45, 150, 200] },
+      { mard: "R8", coco: "L08", name: "半透深蓝", rgb: [60, 100, 190] },
+      { mard: "R9", coco: "L09", name: "半透紫", rgb: [140, 70, 180] },
+      { mard: "T1", coco: "L14", name: "半透白", rgb: [235, 235, 225] },
+
+      { mard: "Y1", coco: "N01", name: "夜光粉", rgb: [245, 120, 200] },
+      { mard: "Y2", coco: "N02", name: "夜光橙", rgb: [245, 170, 90] },
+      { mard: "Y3", coco: "N03", name: "夜光黄绿", rgb: [200, 235, 100] },
+      { mard: "Y4", coco: "N04", name: "夜光蓝", rgb: [100, 210, 230] },
+      { mard: "Y5", coco: "N05", name: "夜光紫", rgb: [210, 120, 220] }
+    ];
+
+    function getCellDisplaySize() {
+      return gridSize === 64 ? 10 : 18;
+    }
+
+    function getPrintCellSize() {
+      return gridSize === 64 ? 24 : 42;
+    }
+
+    function rgbToCss(rgb) {
+      return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+    }
+
+    function getBeadCode(bead) {
+      return `${bead.mard}/${bead.coco}`;
+    }
+
+    function findNearestBeadColor(r, g, b) {
+      let nearest = beadPalette[0];
+      let minDistance = Infinity;
+
+      beadPalette.forEach(bead => {
+        const [br, bg, bb] = bead.rgb;
+
+        const distance =
+          Math.pow(r - br, 2) +
+          Math.pow(g - bg, 2) +
+          Math.pow(b - bb, 2);
+
+        if (distance < minDistance) {
+          minDistance = distance;
+          nearest = bead;
+        }
+      });
+
+      return nearest;
+    }
+
+    function hexToRgbString(hex) {
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      return `${r},${g},${b}`;
+    }
+
+    function createBoard() {
+      board.innerHTML = "";
+
+      const cellSize = getCellDisplaySize();
+
+      board.style.gridTemplateColumns = `repeat(${gridSize}, ${cellSize}px)`;
+      board.style.gridTemplateRows = `repeat(${gridSize}, ${cellSize}px)`;
+
+      for (let i = 0; i < totalCells; i++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+
+        cell.style.width = cellSize + "px";
+        cell.style.height = cellSize + "px";
+
+        cell.dataset.code = "";
+        cell.dataset.name = "";
+        cell.dataset.rgb = "255,255,255";
+
+        cell.onclick = function () {
+          cell.style.backgroundColor = colorPicker.value;
+          cell.dataset.code = "自选";
+          cell.dataset.name = "Custom 自选颜色";
+          cell.dataset.rgb = hexToRgbString(colorPicker.value);
+        };
+
+        board.appendChild(cell);
+      }
+    }
+
+    function changeGridSize() {
+      gridSize = Number(gridSizeSelect.value);
+      totalCells = gridSize * gridSize;
+      createBoard();
+    }
+
+    function clearBoard() {
+      const cells = document.querySelectorAll(".cell");
+
+      cells.forEach(cell => {
+        cell.style.backgroundColor = "white";
+        cell.dataset.code = "";
+        cell.dataset.name = "";
+        cell.dataset.rgb = "255,255,255";
+      });
+    }
+
+    imageUpload.addEventListener("change", function (event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const img = new Image();
+      img.src = URL.createObjectURL(file);
+
+      img.onload = function () {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+
+        canvas.width = gridSize;
+        canvas.height = gridSize;
+
+        ctx.drawImage(img, 0, 0, gridSize, gridSize);
+
+        const cells = document.querySelectorAll(".cell");
+
+        for (let y = 0; y < gridSize; y++) {
+          for (let x = 0; x < gridSize; x++) {
+            const pixel = ctx.getImageData(x, y, 1, 1).data;
+
+            const r = pixel[0];
+            const g = pixel[1];
+            const b = pixel[2];
+            const a = pixel[3];
+
+            const index = y * gridSize + x;
+
+            if (a === 0) {
+              cells[index].style.backgroundColor = "white";
+              cells[index].dataset.code = "";
+              cells[index].dataset.name = "";
+              cells[index].dataset.rgb = "255,255,255";
+            } else {
+              const bead = findNearestBeadColor(r, g, b);
+
+              cells[index].style.backgroundColor = rgbToCss(bead.rgb);
+              cells[index].dataset.code = getBeadCode(bead);
+              cells[index].dataset.name = bead.name;
+              cells[index].dataset.rgb = bead.rgb.join(",");
+            }
+          }
+        }
+
+        URL.revokeObjectURL(img.src);
+      };
+    });
+
+    function exportPattern() {
+      const cells = document.querySelectorAll(".cell");
+
+      const printCellSize = getPrintCellSize();
+      const patternSize = gridSize * printCellSize;
+      const legendHeight = 700;
+
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+
+      canvas.width = patternSize;
+      canvas.height = patternSize + legendHeight;
+
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const colorStats = {};
+
+      cells.forEach((cell, index) => {
+        const code = cell.dataset.code;
+        const name = cell.dataset.name;
+        const rgbText = cell.dataset.rgb || "255,255,255";
+        const [r, g, b] = rgbText.split(",").map(Number);
+
+        const isEmpty = !code || (r === 255 && g === 255 && b === 255);
+
+        if (!isEmpty) {
+          if (!colorStats[code]) {
+            colorStats[code] = {
+              name: name,
+              rgb: [r, g, b],
+              count: 0
+            };
+          }
+          colorStats[code].count++;
+        }
+
+        const x = index % gridSize;
+        const y = Math.floor(index / gridSize);
+
+        ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+        ctx.fillRect(
+          x * printCellSize,
+          y * printCellSize,
+          printCellSize,
+          printCellSize
+        );
+
+        ctx.strokeStyle = "#333";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(
+          x * printCellSize,
+          y * printCellSize,
+          printCellSize,
+          printCellSize
+        );
+
+        if (!isEmpty) {
+          ctx.fillStyle = "#000";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+
+          if (gridSize === 64) {
+            ctx.font = "bold 7px Arial";
+          } else {
+            ctx.font = "bold 11px Arial";
+          }
+
+          ctx.fillText(
+            code,
+            x * printCellSize + printCellSize / 2,
+            y * printCellSize + printCellSize / 2
+          );
+        }
+      });
+
+      let startY = patternSize + 40;
+
+      ctx.fillStyle = "#000";
+      ctx.font = "bold 28px Arial";
+      ctx.textAlign = "left";
+      ctx.fillText(`拼豆色号统计 MARD / COCO（${gridSize}×${gridSize}）`, 20, startY);
+
+      startY += 45;
+
+      Object.keys(colorStats).forEach(code => {
+        const item = colorStats[code];
+        const [r, g, b] = item.rgb;
+
+        ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+        ctx.fillRect(20, startY - 24, 32, 32);
+
+        ctx.strokeStyle = "#333";
+        ctx.strokeRect(20, startY - 24, 32, 32);
+
+        ctx.fillStyle = "#000";
+        ctx.font = "18px Arial";
+        ctx.fillText(`${code}  ${item.name}：${item.count} 颗`, 65, startY);
+
+        startY += 34;
+      });
+
+      const link = document.createElement("a");
+      link.download = `MARD_COCO拼豆打印图纸_${gridSize}x${gridSize}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    }
+
+    createBoard();
+  </script>
+</body>
+</html>
